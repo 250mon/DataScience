@@ -1,0 +1,13 @@
+# exclude everything except .py
+
+# Ignore everything
+*
+
+# But not these files
+!/.gitignore
+!*.py
+
+# even if they are in subdirectoreis
+!*/
+
+# if the files to be tracked are in subdirectories
