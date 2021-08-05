@@ -1,17 +1,7 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# # 건강보험심사평가원_병원정보서비스
-
-# In[24]:
-
-
+"""건강보험심사평가원_병원정보서비스"""
 import pandas as pd
 import os
-import csv
-
-
-# In[25]:
+from pdp_utils import PdpData
 
 
 """
@@ -34,89 +24,50 @@ cl_cds = {
 }
 # dg_sbjt_cd = ['05', '06', '09', '21']  # 05 정형  06 신경  09 마취  21 재활
 
+# global variables
+# datasets_dir = ''
+datasets_dir = 'E:\\Datasets\\PublicDataPortal\\HealthCare\\'
 
-# In[26]:
-
-
-hosp_type = 'Univ'
-sido = 'GyeongGi'
+# hosp_type = 'Univ'
+hosp_type = 'Hosp'
 # hosp_type = 'Clinic'
+sido = 'Seoul'
+# sido = 'GyeongGi'
 url = 'http://apis.data.go.kr/B551182/hospInfoService1/getHospBasisList1'
 num_rows = 500
-hi_dir_name = 'HospInfo' + '_' + sido
+
+hi_name_stem = 'HospInfo' + '_' + sido
+hi_dir_name = datasets_dir + hi_name_stem
 hi_file_stem = hi_dir_name + '_' + hosp_type
-hi_hdf_name = hi_file_stem + '.h5'
-hi_hdf_path = os.path.join(hi_dir_name, hi_hdf_name)
-hi_csv_name = hi_file_stem + '.csv'
-hi_csv_path = os.path.join(hi_dir_name, hi_csv_name)
-
-
-# In[27]:
-
-
-from pdp_utils import PdpData
-
-
-# In[28]:
-
+hi_hdf_path = os.path.join(hi_dir_name, hi_file_stem + '.h5')
+hi_csv_path = os.path.join(hi_dir_name, hi_file_stem + '.csv')
 
 params = {
     'sidoCd': sido_cds[sido],
 #     'zipCd': '2070',
     'clCd': cl_cds[hosp_type],
 }
-pdp = PdpData(url, hi_dir_name, hosp_type, num_rows=num_rows)
+pdp = PdpData(url, hi_csv_path, num_rows=num_rows)
 pdp.set_params(params)
+
+# CSV
+pdp.fetch_to_csv(pbar=True)
+
+# validate the data
+data_df = pd.read_csv(hi_csv_path)
+print(data_df.nunique())
+print(data_df.isnull().any())
+exit(0)
+
+# HDF
 # the file path will be dir_name/dir_name.h5
 pdp.fetch_to_hdf(st_key='data', pbar=True, min_itemsize={'values':200})
-# pdp.fetch_to_csv(pbar=True)
 
-
-# # CSV
-
-# ## Remove multiple headers
-
-# In[11]:
-
-
-data_df = pd.read_csv(hi_csv_path)
-data_df.shape
-
-
-# # HDF
-
-# ## Processing HDF
-
-# In[31]:
-
-
+# validate the data
 data_df = pd.read_hdf(hi_hdf_path, "data")
-data_df.shape
+print(data_df.nunique())
+print(data_df.isnull().any())
 
-
-# In[32]:
-
-
-data_df.nunique()
-
-
-# In[33]:
-
-
-data_df.isnull().any()
-
-
-# ## HDF to CSV
-
-# In[34]:
-
-
+# HDF to CSV
 data_df.to_csv(hi_csv_path, encoding='euc-kr')
-
-
-# In[35]:
-
-
-temp_df = pd.read_csv(hi_csv_path)
-temp_df.shape
-
+exit(0)
