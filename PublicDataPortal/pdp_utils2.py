@@ -10,7 +10,9 @@ import logging
 
 class PdpData2:
     def __init__(self, name, url):
-        self.API_KEY =***REMOVED***
+        self.config = configparser.ConfigParser()
+        self.config.read('config.ini')
+        self.API_KEY = self.config['DEFAULT']['ApiKey']
         self.url = url
         self.dir_name = name
         self.num_rows = 280
