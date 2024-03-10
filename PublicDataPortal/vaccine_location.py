@@ -16,7 +16,7 @@ import json
 # In[2]:
 
 
-API_KEY =***REMOVED***
+API_KEY = ***REMOVED***
 
 def get_data_from_portal(url, params):    
     svc_key = f'?{quote_plus("serviceKey")}={API_KEY}&'

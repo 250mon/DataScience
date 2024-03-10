@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 # In[36]:
 
 
-API_KEY =***REMOVED***
+API_KEY = ***REMOVED***
 
 def get_data_from_portal(url, params, bjson=False):    
     svc_key = f'?{quote_plus("ServiceKey")}={API_KEY}&'
