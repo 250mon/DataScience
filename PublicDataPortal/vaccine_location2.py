@@ -11,12 +11,15 @@ from urllib.parse import urlencode, quote_plus
 import requests as rq
 import pandas as pd
 import json
+import configparser
 
 
 # In[2]:
 
 
-API_KEY = ***REMOVED***
+config = configparser.ConfigParser()
+config.read('config.ini')
+API_KEY = config['DEFAULT']['ApiKey']
 
 def get_data_from_portal(url, params):    
     svc_key = f'?{quote_plus("serviceKey")}={API_KEY}&'
