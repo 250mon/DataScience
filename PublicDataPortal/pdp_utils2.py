@@ -3,7 +3,7 @@ import requests as rq
 import pandas as pd
 import json
 import os
-import shutil
+import configparser
 import tqdm
 import logging
 
@@ -12,20 +12,21 @@ class PdpData2:
     def __init__(self, name, url):
         self.config = configparser.ConfigParser()
         self.config.read('config.ini')
-        self.API_KEY = self.config['DEFAULT']['ApiKey']
+        self.api_key = self.config['DEFAULT']['ApiKey']
         self.url = url
         self.dir_name = name
         self.num_rows = 280
         self.total_cnt = 0
         self.params = {}
         self.logger = self._init_logger(name, logging.WARNING)
+        self.progress_bar = True
 
         # os.makedirs(os.path.join(os.getcwd(), 'Hosp_Info'), exist_ok=True)
         os.makedirs(os.path.join(os.getcwd(), self.dir_name), exist_ok=True)
 
     def _init_logger(self, name, log_level):
         # create logger
-        logger = logging.getLogger('log_' + name)
+        logger = logging.getLogger(name)
         logger.setLevel(log_level)
         # create console handler and set level to debug
         ch = logging.StreamHandler()
@@ -42,10 +43,10 @@ class PdpData2:
     # new version; default response is json
     def _get_raw_data(self):
         self.logger.debug(f'url     = {self.url}')
-        self.logger.debug(f'svc_key = {self.API_KEY}')
+        self.logger.debug(f'svc_key = {self.api_key}')
         self.logger.debug(f'params  = {self.params}')
 
-        svc_key = f'?{quote_plus("serviceKey")}={self.API_KEY}&'
+        svc_key = f'?{quote_plus("serviceKey")}={self.api_key}&'
         parsed_params = {}
         for p_key, p_value in self.params.items():
             parsed_params[quote_plus(p_key)] = p_value
@@ -78,27 +79,35 @@ class PdpData2:
         # HDF file path will be DIR_NAME/DIR_NAME.h5
         hdf_file = os.path.join(self.dir_name, self.dir_name + '.h5')
         with pd.HDFStore(hdf_file) as store:
-            prev_cnt = 0
+            # firstly, find totalCnt
+            # calculate total number of pages from totalCnt
             page = 1
-            while True:
+            self._add_header_to_params(page)
+            response = self._get_raw_data()
+            resp_dict = json.loads(response.text)
+            current_cnt = resp_dict['currentCount']
+            total_cnt = resp_dict['totalCount']
+            total_pages = range((total_cnt - 1) // current_cnt + 1)
+            if self.progress_bar:
+                total_pages = tqdm.tqdm(total_pages)
+
+            # iterate getting data
+            for page in total_pages:
                 self._add_header_to_params(page)
-                page += 1
                 response = self._get_raw_data()
                 # self.logger.debug(f'\nResponse:\n{response.text}')
                 resp_dict = json.loads(response.text)
+
                 # get counts and data
-                self.logger.debug(f'\nResponse:\n{resp_dict}')
-                total_cnt = resp_dict['totalCount']
                 current_cnt = resp_dict['currentCount']
+                total_cnt = resp_dict['totalCount']
+                self.logger.debug(f'\nResponse:\n{resp_dict}')
+                self.logger.info(f"totalCount={total_cnt}\tcurrentCount={current_cnt}")
+
                 data_df = pd.DataFrame(resp_dict['data'])
-                self.logger.info(
-                    f"totalCount={total_cnt}\tcurrentCount={current_cnt}")
+
                 # storing
                 store.append(file_name, data_df)
-                if current_cnt == total_cnt or prev_cnt == current_cnt:
-                    break
-                else:
-                    prev_cnt = current_cnt
         # make CSV files out of each table
         # df = pd.read_hdf(hdf_file, file_name)
         # df.to_csv(os.path.join(self.dir_name, file_name + '.csv'),
