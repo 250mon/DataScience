@@ -8,9 +8,9 @@ import tqdm
 import logging
 
 
-class PdpData2:
+class PdpData:
     def __init__(self, name, url):
-        self.config = configparser.ConfigParser()
+        self.config = configparser.RawConfigParser()
         self.config.read('config.ini')
         self.api_key = self.config['DEFAULT']['ApiKey']
         self.url = url
@@ -67,8 +67,35 @@ class PdpData2:
         }
         self.params.update(params_header)
 
-    def set_params(self, params):
-        self.params = params
+    # return a range iterable of total pages
+    # firstly, find totalCnt
+    # calculate total number of pages from totalCnt
+    def _page_range(self):
+        page = 1
+        self._add_header_to_params(page)
+        response = self._get_raw_data()
+        resp_dict = json.loads(response.text)
+        current_cnt = resp_dict['currentCount']
+        total_cnt = resp_dict['totalCount']
+        self.logger.info(f"totalCount={total_cnt}\tcurrentCount={current_cnt}")
+
+        total_pages = range((total_cnt - 1) // current_cnt + 1)
+        if self.progress_bar:
+            total_pages = tqdm.tqdm(total_pages)
+
+        return total_pages
+
+
+    # get data from the portal and
+    # convert data to df
+    def _get_data_to_df(self, page):
+        self._add_header_to_params(page)
+        response = self._get_raw_data()
+        self.logger.debug(f'\nResponse:\n{response.text}')
+        resp_dict = json.loads(response.text)
+        self.logger.debug(f'\nResponse:\n{resp_dict}')
+        data_df = pd.DataFrame(resp_dict['data'])
+        return data_df
 
     # get the data and store it
     # self.dir_name is used for a HDF file as well as the directory
@@ -79,74 +106,31 @@ class PdpData2:
         # HDF file path will be DIR_NAME/DIR_NAME.h5
         hdf_file = os.path.join(self.dir_name, self.dir_name + '.h5')
         with pd.HDFStore(hdf_file) as store:
-            # firstly, find totalCnt
-            # calculate total number of pages from totalCnt
-            page = 1
-            self._add_header_to_params(page)
-            response = self._get_raw_data()
-            resp_dict = json.loads(response.text)
-            current_cnt = resp_dict['currentCount']
-            total_cnt = resp_dict['totalCount']
-            total_pages = range((total_cnt - 1) // current_cnt + 1)
-            if self.progress_bar:
-                total_pages = tqdm.tqdm(total_pages)
-
+            total_pages = self._page_range()
             # iterate getting data
             for page in total_pages:
-                self._add_header_to_params(page)
-                response = self._get_raw_data()
-                # self.logger.debug(f'\nResponse:\n{response.text}')
-                resp_dict = json.loads(response.text)
-
-                # get counts and data
-                current_cnt = resp_dict['currentCount']
-                total_cnt = resp_dict['totalCount']
-                self.logger.debug(f'\nResponse:\n{resp_dict}')
-                self.logger.info(f"totalCount={total_cnt}\tcurrentCount={current_cnt}")
-
-                data_df = pd.DataFrame(resp_dict['data'])
-
+                data_df = self._get_data_to_df(page)
                 # storing
                 store.append(file_name, data_df)
-        # make CSV files out of each table
-        # df = pd.read_hdf(hdf_file, file_name)
-        # df.to_csv(os.path.join(self.dir_name, file_name + '.csv'),
-                  # index=False,
-                  # encoding='euc-kr')
 
     # store the data in csv file format only
     def fetch_to_csv(self, file_name):
-        prev_cnt = 0
-        page = 1
-        while True:
-            self._add_header_to_params(page)
-            page += 1
-            response = self._get_raw_data()
-            # self.logger.debug(f'\nResponse:\n{response.text}')
-            resp_dict = json.loads(response.text)
-            # get counts and data
-            self.logger.debug(f'\nResponse:\n{resp_dict}')
-            total_cnt = resp_dict['totalCount']
-            current_cnt = resp_dict['currentCount']
-            data_df = pd.DataFrame(resp_dict['data'])
-            self.logger.info(
-                f"totalCount={total_cnt}\tcurrentCount={current_cnt}")
+        total_pages = self._page_range()
+        # iterate getting data
+        for page in total_pages:
+            data_df = self._get_data_to_df(page)
             # storing
             data_df.to_csv(os.path.join(self.dir_name, file_name),
                            mode='a',
                            index=False,
                            encoding='euc-kr')
-            if current_cnt == total_cnt or prev_cnt == current_cnt:
-                break
-            else:
-                prev_cnt = current_cnt
 
 
 if __name__ == '__main__':
     # vaccine center location
     url = 'https://api.odcloud.kr/api/15077586/v1/centers'
     dir_name = 'Test2'
-    pdp2 = PdpData2(dir_name, url)
+    pdp2 = PdpData(dir_name, url)
 
     # pdp2.get_and_store_csv(dir_name + '_' + 'VaccineLocation')
     pdp2.fetch_to_csv(dir_name + '_' + 'VaccineLocation.csv')

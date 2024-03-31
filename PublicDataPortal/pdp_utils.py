@@ -12,7 +12,7 @@ import logging
 
 class PdpData:
     def __init__(self, url, file_path, num_rows=200):
-        self.config = configparser.ConfigParser()
+        self.config = configparser.RawConfigParser()
         self.config.read('config.ini')
         self.API_KEY = self.config['DEFAULT']['ApiKey']
         self.url = url
