@@ -6,55 +6,48 @@ import os
 import configparser
 import tqdm
 import logging
+from my_log import setup_logger
+
+
+setup_logger()
+logger = logging.getLogger('main')
 
 
 class PdpData:
-    def __init__(self, name, url):
+    def __init__(self, dir_name, url):
         self.config = configparser.RawConfigParser()
         self.config.read('config.ini')
         self.api_key = self.config['DEFAULT']['ApiKey']
         self.url = url
-        self.dir_name = name
+        self.dir_name = dir_name
         self.num_rows = 280
         self.total_cnt = 0
         self.params = {}
-        self.logger = self._init_logger(name, logging.WARNING)
         self.progress_bar = True
 
         # os.makedirs(os.path.join(os.getcwd(), 'Hosp_Info'), exist_ok=True)
         os.makedirs(os.path.join(os.getcwd(), self.dir_name), exist_ok=True)
 
-    def _init_logger(self, name, log_level):
-        # create logger
-        logger = logging.getLogger(name)
-        logger.setLevel(log_level)
-        # create console handler and set level to debug
-        ch = logging.StreamHandler()
-        ch.setLevel(log_level)
-        # create formatter
-        # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        formatter = logging.Formatter('%(levelname)s - %(message)s')
-        # add formatter to ch
-        ch.setFormatter(formatter)
-        # add ch to logger
-        logger.addHandler(ch)
-        return logger
+    def set_params(self, params):
+        """Set params of a request URI"""
+        self.params = params
 
     # new version; default response is json
     def _get_raw_data(self):
-        self.logger.debug(f'url     = {self.url}')
-        self.logger.debug(f'svc_key = {self.api_key}')
-        self.logger.debug(f'params  = {self.params}')
+        logger.debug(f'url     = {self.url}')
+        logger.debug(f'svc_key = {self.api_key}')
+        logger.debug(f'params  = {self.params}')
 
         svc_key = f'?{quote_plus("serviceKey")}={self.api_key}&'
         parsed_params = {}
         for p_key, p_value in self.params.items():
-            parsed_params[quote_plus(p_key)] = p_value
+            parsed_params[quote_plus(p_key)] = pr
+            n_value
         # encoding
         encoded_params = svc_key + urlencode(parsed_params)
         # reqesting
         request = self.url + encoded_params
-        self.logger.debug(f'request= {request}')
+        logger.debug(f'request= {request}')
         response = rq.get(request)
         return response
 
@@ -71,13 +64,12 @@ class PdpData:
     # firstly, find totalCnt
     # calculate total number of pages from totalCnt
     def _page_range(self):
-        page = 1
-        self._add_header_to_params(page)
+        self._add_header_to_params(1)
         response = self._get_raw_data()
         resp_dict = json.loads(response.text)
         current_cnt = resp_dict['currentCount']
         total_cnt = resp_dict['totalCount']
-        self.logger.info(f"totalCount={total_cnt}\tcurrentCount={current_cnt}")
+        logger.info(f"totalCount={total_cnt}\tcurrentCount={current_cnt}")
 
         total_pages = range((total_cnt - 1) // current_cnt + 1)
         if self.progress_bar:
@@ -85,41 +77,37 @@ class PdpData:
 
         return total_pages
 
-
     # get data from the portal and
     # convert data to df
     def _get_data_to_df(self, page):
         self._add_header_to_params(page)
         response = self._get_raw_data()
-        self.logger.debug(f'\nResponse:\n{response.text}')
+        logger.debug(f'\nResponse:\n{response.text}')
         resp_dict = json.loads(response.text)
-        self.logger.debug(f'\nResponse:\n{resp_dict}')
+        logger.debug(f'\nResponse:\n{resp_dict}')
         data_df = pd.DataFrame(resp_dict['data'])
         return data_df
 
     # get the data and store it
-    # self.dir_name is used for a HDF file as well as the directory
-    # The HDF file has multple tables named file_name
-    # ; file_name is the name of each table and
-    # each table well be converted to the CSV file of the same name
-    def fetch_to_hdf(self, file_name):
+    # self.dir_name is used as a HDF file name as well as 
+    # the directory name
+    # The HDF file has multple tables named st_key
+    def fetch_to_hdf(self, st_key):
+        """Fetch data and store it under st_key(store key) in a HDF file"""
         # HDF file path will be DIR_NAME/DIR_NAME.h5
         hdf_file = os.path.join(self.dir_name, self.dir_name + '.h5')
         with pd.HDFStore(hdf_file) as store:
-            total_pages = self._page_range()
-            # iterate getting data
-            for page in total_pages:
+            page_range = self._page_range()
+            for page in page_range:
                 data_df = self._get_data_to_df(page)
-                # storing
-                store.append(file_name, data_df)
+                store.append(st_key, data_df)
 
     # store the data in csv file format only
     def fetch_to_csv(self, file_name):
-        total_pages = self._page_range()
-        # iterate getting data
-        for page in total_pages:
+        """Fetch data and store it into a csv file"""
+        page_range = self._page_range()
+        for page in page_range:
             data_df = self._get_data_to_df(page)
-            # storing
             data_df.to_csv(os.path.join(self.dir_name, file_name),
                            mode='a',
                            index=False,
