@@ -194,7 +194,7 @@ if __name__ == '__main__':
         'sidoCd': '310000',
         'clCd': cl_cds[hosp_type],
     }
-    pdp = PdpData(url, dir_name, hosp_type)
+    pdp = PdpData(url, dir_name)
     pdp.set_params(params)
     print(f"saving {hosp_type} ...")
     # pdp.fetch_to_csv()
