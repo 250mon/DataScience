@@ -1,6 +1,7 @@
 """건강보험심사평가원_병원정보서비스"""
 import pandas as pd
 import os
+import itertools
 from pdp_utils import PdpData
 
 
@@ -25,49 +26,36 @@ cl_cds = {
 # dg_sbjt_cd = ['05', '06', '09', '21']  # 05 정형  06 신경  09 마취  21 재활
 
 # global variables
-# datasets_dir = ''
-datasets_dir = 'E:\\Datasets\\PublicDataPortal\\HealthCare\\'
-
-# hosp_type = 'Univ'
-hosp_type = 'Hosp'
-# hosp_type = 'Clinic'
-sido = 'Seoul'
-# sido = 'GyeongGi'
-url = 'http://apis.data.go.kr/B551182/hospInfoService1/getHospBasisList1'
+hi_dir = './Hospital_Info'
+url = 'http://apis.data.go.kr/B551182/hospInfoServicev2/getHospBasisList'
 num_rows = 500
 
-hi_name_stem = 'HospInfo' + '_' + sido
-hi_dir_name = datasets_dir + hi_name_stem
-hi_file_stem = hi_dir_name + '_' + hosp_type
-hi_hdf_path = os.path.join(hi_dir_name, hi_file_stem + '.h5')
-hi_csv_path = os.path.join(hi_dir_name, hi_file_stem + '.csv')
+sidos = ['Seoul', 'GyeongGi']
+hosp_types = ['Univ', 'Hosp', 'Clinic']
 
-params = {
-    'sidoCd': sido_cds[sido],
-#     'zipCd': '2070',
-    'clCd': cl_cds[hosp_type],
-}
-pdp = PdpData(url, hi_csv_path, num_rows=num_rows)
-pdp.set_params(params)
+for sido, h_type in itertools.product(sidos, hosp_types):
+    params = {
+        'sidoCd': sido_cds[sido],
+        # 'clCd': cl_cds[h_type],
+    }
+    pdp = PdpData(url, hi_dir, num_rows=num_rows)
+    pdp.set_params(params)
 
-# CSV
-pdp.fetch_to_csv(pbar=True)
+    # param_col = {'sido': sido, 'type': h_type}
+    param_col = {'sido': sido}
 
-# validate the data
-data_df = pd.read_csv(hi_csv_path)
-print(data_df.nunique())
-print(data_df.isnull().any())
-exit(0)
+    # CSV
+    pdp.fetch_to_csv('hosp_info', param_col)
 
-# HDF
-# the file path will be dir_name/dir_name.h5
-pdp.fetch_to_hdf(st_key='data', pbar=True, min_itemsize={'values':200})
+    # HDF
+    # pdp.fetch_to_hdf('hosp_info', param_col)
 
 # validate the data
-data_df = pd.read_hdf(hi_hdf_path, "data")
-print(data_df.nunique())
-print(data_df.isnull().any())
+# data_df = pd.read_csv(os.path.join(hi_dir, 'hosp_info.csv'))
+# print(data_df.nunique())
+# print(data_df.isnull().any())
 
-# HDF to CSV
-data_df.to_csv(hi_csv_path, encoding='euc-kr')
-exit(0)
+# validate the data
+# data_df = pd.read_hdf(os.path.join(hi_dir, 'hosp_info.h5'), 'data')
+# print(data_df.nunique())
+# print(data_df.isnull().any())

@@ -1,14 +1,14 @@
 import configparser
 from urllib.parse import urlencode, quote_plus
+from urllib3 import Timeout, PoolManager
 import requests as rq
 import pandas as pd
-import xml.etree.ElementTree as ET
 import lxml.etree as etree
 import os
 from pathlib import PurePath
-import csv
 import shutil
 import tqdm
+from time import sleep
 import logging
 from my_log import setup_logger
 
@@ -16,21 +16,34 @@ from my_log import setup_logger
 setup_logger()
 logger = logging.getLogger('main')
 
+class CustomResponse:
+    def __init__(self, response):
+        self.response = response
+
+    @property
+    def content(self):
+        return self.response.data
+
+    @property
+    def text(self):
+        return self.response.data.decode('utf-8')
+
+    @property
+    def status_code(self):
+        return self.response.status
+
 
 class PdpData:
     def __init__(self, url, dir_name, num_rows=200):
         self.config = configparser.RawConfigParser()
         self.config.read('config.ini')
         self.api_key = self.config['DEFAULT']['ApiKey']
-        print(self.api_key)
-        self.api_key = ***REMOVED***
-        print(self.api_key)
         self.url = url
         self.dir_name = dir_name
         self.num_rows = num_rows
-        self.total_cnt = 0
         self.params = {}
         self.progress_bar = True
+        self.wait_time = 0
         # file paths will be DIR_NAME/DIR_NAME.h5 or csv
         os.makedirs(os.path.join(os.getcwd(), self.dir_name), exist_ok=True)
 
@@ -52,10 +65,6 @@ class PdpData:
 
     # old version; default response is XML
     def _get_raw_data(self, bjson=False):
-        logger.debug(f'url     = {self.url}')
-        logger.debug(f'svc_key = {self.api_key}')
-        logger.debug(f'params  = {self.params}')
-
         svc_key = f'?{quote_plus("ServiceKey")}={self.api_key}&'
         parsed_params = {}
         for p_key, p_value in self.params.items():
@@ -66,8 +75,14 @@ class PdpData:
         encoded_params = svc_key + urlencode(parsed_params)
         # reqesting
         request = self.url + encoded_params
-        logger.debug(f'request= {request}')
-        response = rq.get(request)
+        # logger.debug(f'request= {request}')
+
+        # response = rq.get(request)
+
+        timeout = Timeout(connect=10.0, read=None)
+        http = PoolManager(timeout=timeout)
+        response = http.request('GET', request)
+        response = CustomResponse(response)
         return response
 
     # add page_no to the params
@@ -89,12 +104,16 @@ class PdpData:
     # calculate total number of pages from totalCnt
     def _page_range(self):
         self._add_header_to_params(1)
+        logger.debug(f'url     = {self.url}')
+        logger.debug(f'svc_key = {self.api_key}')
+        logger.debug(f'params  = {self.params}')
+
         response = self._get_raw_data()
         root = etree.fromstring(response.content) # returns a element class
-        # logger.debug(self.prettyprint(root, encoding='utf-8'))
+        logger.debug(self._prettyprint(root, encoding='utf-8'))
 
         total_cnt = int(root.find(".//totalCount").text)
-        logger.info(f"total count {self.total_cnt} ...")
+        logger.info(f"total count {total_cnt} ...")
 
         total_pages = range((total_cnt - 1) // self.num_rows + 1)
         if self.progress_bar:
@@ -116,35 +135,54 @@ class PdpData:
     # self.dir_name is used as a HDF file name as well as 
     # the directory name
     # The HDF file has multple tables named st_key
-    def fetch_to_hdf(self, st_key: str):
+    def fetch_to_hdf(self,
+                     file_name: str or PurePath,
+                     param_columns: dict = None):
         """Fetch data and store it under st_key(store key) in a HDF file"""
         # HDF file path will be DIR_NAME/DIR_NAME.h5
-        hdf_file = os.path.join(self.dir_name, self.dir_name + '.h5')
+        hdf_file = os.path.join(self.dir_name, file_name + '.h5')
         # self._backup_file(hdf_file_path)
         with pd.HDFStore(hdf_file) as store:
-            page_range = self._page_range()
-            for page in page_range:
+            for page in self._page_range():
                 data_df = self._get_data_to_df(page)
-                store.append(st_key, data_df)
+                if param_columns:
+                    data_df[list(param_columns.keys())] = list(param_columns.values())
+                store.append('data', data_df)
+                sleep(self.wait_time)
 
-    def fetch_to_csv(self, file_name: str):
+    def fetch_to_csv(self,
+                     file_name: str or PurePath,
+                     param_columns: dict = None):
         """Fetch data and store it into a csv file"""
         # self._backup_file(file_name)
-        page_range = self._page_range()
-        for page in page_range:
+        csv_file = os.path.join(self.dir_name, file_name + '.csv')
+        for page in self._page_range():
             data_df = self._get_data_to_df(page)
-            data_df.to_csv(os.path.join(self.dir_name, file_name),
+
+            if param_columns:
+                data_df[list(param_columns.keys())] = list(param_columns.values())
+
+            if page == 0:
+                header = True
+            else:
+                header = False
+
+            data_df.to_csv(csv_file,
                            mode='a',
                            index=False,
-                           encoding='utf-8-sig')
+                           encoding='utf-8-sig',
+                           header=header)
+            sleep(self.wait_time)
 
-    def fetch_to_df(self):
+    def fetch_to_df(self, param_columns: dict = None):
         """Fetch data and returns DataFrame"""
         result_df = pd.DataFrame()
-        page_range = self._page_range()
-        for page in page_range:
+        for page in self._page_range():
             data_df = self._get_data_to_df(page)
+            if param_columns:
+                data_df[list(param_columns.keys())] = list(param_columns.values())
             result_df = pd.concat([result_df, data_df])
+            sleep(self.wait_time)
         return result_df
 
 
@@ -173,10 +211,11 @@ if __name__ == '__main__':
         'sidoCd': '310000',
         'clCd': cl_cds[hosp_type],
     }
-    pdp = PdpData(url, dir_name)
+    param_columns = {'sido': 'Gyeongi', 'cl': 'Univ'}
+    pdp = PdpData(url, dir_name, 2)
     pdp.set_params(params)
     print(f"saving {hosp_type} ...")
-    # df = pdp.fetch_to_df()
+    # df = pdp.fetch_to_df(param_columns)
     # print(df)
-    # pdp.fetch_to_csv('test.csv')
-    pdp.fetch_to_hdf('GG_Univ')
+    pdp.fetch_to_csv('GG_Univ', param_columns)
+    # pdp.fetch_to_hdf('GG_Univ', param_columns)
