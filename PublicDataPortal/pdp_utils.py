@@ -3,6 +3,7 @@ from urllib.parse import urlencode, quote_plus
 import requests as rq
 import pandas as pd
 import xml.etree.ElementTree as ET
+import lxml.etree as etree
 import os
 from pathlib import PurePath
 import csv
@@ -21,6 +22,9 @@ class PdpData:
         self.config = configparser.RawConfigParser()
         self.config.read('config.ini')
         self.api_key = self.config['DEFAULT']['ApiKey']
+        print(self.api_key)
+        self.api_key = ***REMOVED***
+        print(self.api_key)
         self.url = url
         self.dir_name = dir_name
         self.num_rows = num_rows
@@ -75,20 +79,22 @@ class PdpData:
         self.params.update(params_header)
 
 
+    # pretty print a xml element tree
+    def _prettyprint(self, element, **kwargs):
+        xml = etree.tostring(element, pretty_print=True, **kwargs)
+        return xml.decode()
+
     # return a range iterable of total pages
     # firstly, find totalCnt
     # calculate total number of pages from totalCnt
     def _page_range(self):
         self._add_header_to_params(1)
         response = self._get_raw_data()
-        logger.debug(f'response={response} \n')
-        logger.debug(response.text)
-        root = ET.fromstring(response.text)
+        root = etree.fromstring(response.content) # returns a element class
+        # logger.debug(self.prettyprint(root, encoding='utf-8'))
 
-        total_cnt = 0
-        for elem in root.iter('totalCount'):
-            total_cnt = int(elem.text)
-            logger.info(f"total count {self.total_cnt} ...")
+        total_cnt = int(root.find(".//totalCount").text)
+        logger.info(f"total count {self.total_cnt} ...")
 
         total_pages = range((total_cnt - 1) // self.num_rows + 1)
         if self.progress_bar:
@@ -96,48 +102,21 @@ class PdpData:
 
         return total_pages
 
-
-    # get total_cnt from the portal and set the self.total_cnt
-    # by getting data of 1 page and 1 row
-    def _set_total_cnt(self):
-        """Set self.total_cnt"""
-        self._add_header_to_params(1)
-        response = self._get_raw_data()
-        logger.debug(f'set_total_cnt(): response={response} \n')
-        logger.debug(response.text)
-        root = ET.fromstring(response.text)
-        for elem in root.iter('totalCount'):
-            self.total_cnt = int(elem.text)
-        logger.info(f"total count {self.total_cnt} ...")
-
-    # converting XML format data to a DataFrame
-    def _xml_to_df(self, response):
-        root = ET.fromstring(response.text)
-        items_dict = []
-        for item_elem in root.iter('item'):
-            item_dict = {}
-            for nodes in item_elem:
-                item_dict.update({nodes.tag: nodes.text})
-            items_dict.append(item_dict)
-
-        items_df = pd.DataFrame(items_dict)
-        return items_df
-
     # get data from the portal and
     # convert data to df
     def _get_data_to_df(self, page):
         """Send a request and get a response / Return a df of the resp"""
         self._add_header_to_params(page + 1)
         response = self._get_raw_data()
-        logger.debug(f'\nResponse:\n{response.text}')
-        data_df = self._xml_to_df(response)
+        # logger.debug(self.prettyprint(root, encoding='utf-8'))
+        data_df = pd.read_xml(response.content, xpath="//item")
         return data_df
 
     # get the data and store it
     # self.dir_name is used as a HDF file name as well as 
     # the directory name
     # The HDF file has multple tables named st_key
-    def fetch_to_hdf(self, st_key, min_itemsize=None):
+    def fetch_to_hdf(self, st_key: str):
         """Fetch data and store it under st_key(store key) in a HDF file"""
         # HDF file path will be DIR_NAME/DIR_NAME.h5
         hdf_file = os.path.join(self.dir_name, self.dir_name + '.h5')
@@ -146,9 +125,9 @@ class PdpData:
             page_range = self._page_range()
             for page in page_range:
                 data_df = self._get_data_to_df(page)
-                store.append(st_key, data_df, min_itemsize=min_itemsize)
+                store.append(st_key, data_df)
 
-    def fetch_to_csv(self, file_name):
+    def fetch_to_csv(self, file_name: str):
         """Fetch data and store it into a csv file"""
         # self._backup_file(file_name)
         page_range = self._page_range()
@@ -157,7 +136,7 @@ class PdpData:
             data_df.to_csv(os.path.join(self.dir_name, file_name),
                            mode='a',
                            index=False,
-                           encoding='euc-kr')
+                           encoding='utf-8-sig')
 
     def fetch_to_df(self):
         """Fetch data and returns DataFrame"""
@@ -170,7 +149,7 @@ class PdpData:
 
 
 if __name__ == '__main__':
-    url = 'http://apis.data.go.kr/B551182/hospInfoService1/getHospBasisList1'
+    url = 'http://apis.data.go.kr/B551182/hospInfoServicev2/getHospBasisList'
     # params
     """
         'sidoCd': '110000', # 110000:서울
@@ -197,6 +176,7 @@ if __name__ == '__main__':
     pdp = PdpData(url, dir_name)
     pdp.set_params(params)
     print(f"saving {hosp_type} ...")
-    # pdp.fetch_to_csv()
-    df = pdp.fetch_to_df()
-    print(df)
+    # df = pdp.fetch_to_df()
+    # print(df)
+    # pdp.fetch_to_csv('test.csv')
+    pdp.fetch_to_hdf('GG_Univ')

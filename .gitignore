@@ -6,6 +6,8 @@
 # But not these files
 !/.gitignore
 !*.py
+!*.yaml
+!*.txt
 
 # even if they are in subdirectoreis
 !*/
